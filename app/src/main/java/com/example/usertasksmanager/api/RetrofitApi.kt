@@ -1,15 +1,11 @@
 package com.example.usertasksmanager.api
 import android.content.Context
-import android.util.Log
 import com.example.usertasksmanager.utils.Utils
 import com.google.gson.GsonBuilder
-import okhttp3.Cache
-import okhttp3.CacheControl
-import okhttp3.OkHttpClient
-import okhttp3.logging.HttpLoggingInterceptor
+import okhttp3.*
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
-import java.io.File
+import java.io.IOException
 
 
 object RetrofitApi {
@@ -18,42 +14,50 @@ object RetrofitApi {
 
          fun getInstance(context : Context): Retrofit {
              if(retrofit == null){
-                 val httpCacheDirectory = File(context.cacheDir, "cache_file")
+                 val cacheSize = 10 * 1024 * 1024 // 10 MB
 
-                 val myCache = Cache(httpCacheDirectory, Utils.CACHE_SIZE)
+                 val cache = Cache(context.cacheDir, cacheSize.toLong())
                  val gson = GsonBuilder().create()
-
                  retrofit = Retrofit.Builder()
                      .baseUrl(Utils.BASE_URL)
                      .addConverterFactory(GsonConverterFactory.create(gson))
-                     .client(okHttpClient(myCache ,context))
+                     .client(okHttpClient(cache,context))
                      .build()
              }
 
-             Log.e("RETROFIT", retrofit.toString())
              return retrofit!!
         }
 
+    var onlineInterceptor: Interceptor = object : Interceptor {
+        @Throws(IOException::class)
+        override fun intercept(chain: Interceptor.Chain): Response? {
+            val response: Response = chain.proceed(chain.request())
+            val maxAge = 60
+            return response.newBuilder()
+                .header("Cache-Control", "public, max-age=$maxAge")
+                .removeHeader("Pragma")
+                .build()
+        }
+    }
+
+
+    fun offlineInterceptor(context: Context) = Interceptor { chain ->
+        var request: Request = chain.request()
+        if (!Utils.hasNetwork(context)!!) {
+            val maxStale = 60 * 60 * 24 * 30 // Offline cache available for 30 days
+            request = request.newBuilder()
+                .header("Cache-Control", "public, only-if-cached, max-stale=$maxStale")
+                .removeHeader("Pragma")
+                .build()
+        }
+        chain.proceed(request)
+    }
+
         private fun okHttpClient(cache : Cache,context: Context): OkHttpClient {
             return OkHttpClient.Builder()
+                .addInterceptor(offlineInterceptor(context))
+                .addNetworkInterceptor (onlineInterceptor)
                 .cache(cache)
-                .addInterceptor(httpLoggingInterceptor())
-                .addInterceptor { chain ->
-                    var request = chain.request()
-                    request = if (Utils.hasNetwork(context)!!)
-                        request.newBuilder()
-                            .removeHeader("Pragma")
-                            .header("Cache-Control", "public, max-age=" + 5)
-                            .build()
-                           // .cacheControl(CacheControl.FORCE_NETWORK).build()
-                    else
-                        request.newBuilder()
-                            .removeHeader("Pragma")
-                            .header("Cache-Control", "public, only-if-cached, max-stale=" + 60 * 60 * 24 * 7)
-                           // .cacheControl(CacheControl.FORCE_CACHE)
-                            .build()
-                    chain.proceed(request)
-                }
                 .build()
         }
 
@@ -62,11 +66,5 @@ object RetrofitApi {
 
     fun getUsersApi(context : Context) =  getInstance(context).create(UserApi::class.java)
 
-    private fun httpLoggingInterceptor(): HttpLoggingInterceptor {
-        val httpLoggingInterceptor = HttpLoggingInterceptor {
-                message -> Log.i("LoggingInterceptor\n",message) }
-        httpLoggingInterceptor.setLevel(HttpLoggingInterceptor.Level.HEADERS)
-        return httpLoggingInterceptor
-    }
 
 }

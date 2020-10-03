@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.Observer
 import androidx.lifecycle.ViewModelProvider
@@ -57,7 +58,9 @@ class UsersFragment : Fragment(),onUserClickListner {
         viewModel = ViewModelProvider(requireParentFragment( ), MainVMFactory((activity?.application as BasicApplication)))
                         .get(MainViewModel::class.java)
 
-
+        viewModel.getOnError().observe(this, Observer { description  ->
+           Toast.makeText(activity,"No data found, please connect to internet",Toast.LENGTH_LONG).show()
+        })
     }
 
     override fun onResume() {
@@ -66,7 +69,7 @@ class UsersFragment : Fragment(),onUserClickListner {
     }
 
     private fun displayUsers(){
-        viewModel.users.observe(this, Observer { users ->
+        viewModel.getUsers().observe(this, Observer { users ->
             usersAdapter = UsersAdapter(users,this)
             rc_users.apply {
                 adapter = usersAdapter
